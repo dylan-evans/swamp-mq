@@ -1,0 +1,15 @@
+[package]
+name = "swamp"
+version = "0.1.0"
+authors = ["Dylan Evans <dylan@dje.me>"]
+
+[workspace]
+members = [
+    "./",
+    "swamp-exchange",
+    "swamp-engine",
+]
+
+[dependencies]
+    swamp-exchange = "*"
+    swamp-engine = "*"

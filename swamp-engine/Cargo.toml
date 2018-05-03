@@ -1,0 +1,6 @@
+[package]
+name = "swamp-engine"
+version = "0.1.0"
+authors = ["Dylan Evans <dylan@dje.me>"]
+
+[dependencies]
