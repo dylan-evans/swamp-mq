@@ -11,5 +11,5 @@ members = [
 ]
 
 [dependencies]
-    swamp-exchange = "*"
-    swamp-engine = "*"
+#    swamp-exchange = "*"
+#    swamp-engine = "*"
