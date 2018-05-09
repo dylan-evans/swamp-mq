@@ -1,14 +1,12 @@
 
-use std::sync::{Arc, Weak, Mutex};
+use std::sync::{Arc, Mutex};
 use std::rc::Rc;
 use std::cell::Cell;
-use std::collections::HashMap;
 
 
 pub enum ThreadMode<T> {
     Single(Rc<Cell<T>>),
     Multi(Arc<Mutex<T>>),
-//    MultiWeak(Weak<Mutex<T>>),
 }
 
 
@@ -17,6 +15,7 @@ pub enum ThreadMode<T> {
 pub struct Path {
     pub path: String,
 }
+
 
 impl Path {
     pub fn new(path: String) -> Path {
@@ -47,17 +46,54 @@ impl Path {
 }
 
 
+pub enum NodeLinkType {
+    Parent,
+    Child,
+    Subscriber,
+    Other(String),
+}
+
+pub struct NodeLink {
+    pub to: NodeRef,
+    pub relationship: NodeLinkType
+}
+
+
 
 pub trait Node {
-    fn new(path: Path, parent: Option<ThreadMode<Self>>) -> Self where Self: Sized;
-
-    fn new_single_threaded_root() -> ThreadMode<Self> where Self: Sized;
-
-    fn new_multi_threaded_root() -> ThreadMode<Self> where Self: Sized;
-
-    fn subscribe(&mut self, subscriber: ThreadMode<Self>) where Self: Sized;
+    fn new(path: Path, parent: Option<NodeRef>) -> Self where Self: Sized;
 
     fn get_path(&self) -> Path;
+
+    fn create_link(&mut self, to: NodeRef, relationship: NodeLinkType);
+
+    fn new_single_threaded_root() -> AnyRef<Self> where Self: Sized;
+
+    fn new_multi_threaded_root() -> AnyRef<Self> where Self: Sized;
+
+}
+
+pub type AnyRef<T> = ThreadMode<Box<T>>;
+pub type NodeRef = AnyRef<Node>;
+
+impl NodeRef {
+
+    /// Get a copy of the nodes reference
+    pub fn clone(&self) -> AnyRef<Node> {
+        match self {
+            &ThreadMode::Single(ref mode) => ThreadMode::Single(Rc::clone(mode)),
+            &ThreadMode::Multi(ref mode) => ThreadMode::Multi(Arc::clone(mode)),
+        }
+    }
+
+    pub fn get_path(&mut self) -> Path {
+        match *self {
+            ThreadMode::Single(ref mut node) => node.get_mut().get_path(),
+            ThreadMode::Multi(ref node) => (*(*node).lock().unwrap()).get_path()
+        }
+    }
+
+
 }
 
 

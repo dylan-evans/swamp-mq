@@ -1,25 +1,13 @@
+#![warn(dead_code, unused_imports)]
+mod node;
 
-use std::sync::{Arc, Weak, Mutex};
 use std::rc::Rc;
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::sync::{Mutex, Arc};
 
-mod node;
+use node::*;
 
-use node::{Node, Path, ThreadMode};
-impl ThreadMode<SimpleNode> {
-    /// Get a copy of the node reference.
-    pub fn clone(&self) -> ThreadMode<SimpleNode> {
-        match self {
-                &ThreadMode::Single(ref node) => ThreadMode::Single(node.clone()),
-                &ThreadMode::Multi(ref node) => ThreadMode::Multi(node.clone()),
-        }
-    }
-}
-
-
-type SimpleNodeRc = ThreadMode<SimpleNode>;
-type MsgRc = ThreadMode<Msg>;
 
 pub enum MesgData {
     Bytes(Box<[u8]>),
@@ -28,33 +16,56 @@ pub enum MesgData {
 
 pub struct SimpleNode {
     path: Path,
-    children: Vec<ThreadMode<SimpleNode>>,
-    subscribers: Vec<ThreadMode<SimpleNode>>,
-    parent: Option<ThreadMode<SimpleNode>>,
+    links: Vec<NodeLink>
+}
+
+impl AnyRef<SimpleNode> {
+    pub fn clone(&self) -> AnyRef<SimpleNode> {
+        match self {
+            &ThreadMode::Single(ref mode) => ThreadMode::Single(Rc::clone(mode)),
+            &ThreadMode::Multi(ref mode) => ThreadMode::Multi(Arc::clone(mode)),
+        }
+    }
 }
 
 impl Node for SimpleNode {
-    fn new(path: Path, parent: Option<ThreadMode<SimpleNode>>) -> SimpleNode {
-        SimpleNode {path, parent, children: Vec::new(), subscribers: Vec::new()}
-    }
-
-    fn new_single_threaded_root() -> ThreadMode<Self> where Self: Sized {
-        ThreadMode::Single(Rc::new(Cell::new(SimpleNode::new(Path::root(), Option::None))))
-    }
-
-    fn new_multi_threaded_root() -> ThreadMode<Self> where Self: Sized {
-        ThreadMode::Multi(Arc::new(Mutex::new(SimpleNode::new(Path::root(), Option::None))))
-    }
-
-    fn subscribe(&mut self, subscriber: ThreadMode<Self>) where Self: Sized {
-        match subscriber {
-            ThreadMode::Single(r) => self.subscribers.push(ThreadMode::Single(r.clone())),
-            ThreadMode::Multi(r) => self.subscribers.push(ThreadMode::Multi(r.clone()))
+    fn new(path: Path, parent: Option<NodeRef>) -> SimpleNode {
+        let node = SimpleNode {
+            path,
+            links: Vec::new()
         };
+
+        match parent {
+            Some(p) => node.links.push(
+                NodeLink {to: p, relationship: NodeLinkType::Parent}),
+            None => {}
+        };
+
+        node
+    }
+
+    fn new_single_threaded_root() -> AnyRef<Self> where Self: Sized {
+        ThreadMode::Single(Rc::new(Cell::new(Box::new(
+            SimpleNode {
+                path: Path::root(),
+                links: Vec::new()
+            }))))
+    }
+
+    fn new_multi_threaded_root() -> AnyRef<Self> where Self: Sized {
+        ThreadMode::Multi(Arc::new(Mutex::new(Box::new(
+            SimpleNode {
+                path: Path::root(),
+                links: Vec::new()
+            }))))
     }
 
     fn get_path(&self) -> Path {
         return self.path.clone();
+    }
+
+    fn create_link(&mut self, to: NodeRef, relationship: NodeLinkType) {
+        self.links.push(NodeLink {to, relationship});
     }
 
 }
@@ -73,9 +84,8 @@ impl Msg {
 /// The Exchange trait represents the interface used to create a runtime with a particular
 /// threading model.
 pub trait Exchange {
-    fn create_node(&mut self, path: Path);
-    fn insert_node(&mut self, node: SimpleNode);
-    fn get_node(&mut self, path: Path) -> Option<ThreadMode<SimpleNode>>;
+    fn insert_node(&mut self, node: NodeRef);
+    fn get_node(&mut self, path: Path) -> Option<NodeRef>;
     fn del_node(&mut self, path: Path);
     fn add_subscription(&mut self, node: Path, subscriber: Path);
     fn del_subscription(&mut self, node: Path, subscriber: Path);
@@ -83,8 +93,8 @@ pub trait Exchange {
 }
 
 pub struct SimpleExchange {
-    root: ThreadMode<SimpleNode>,
-    map: HashMap<Path, ThreadMode<SimpleNode>>,
+    root: AnyRef<SimpleNode>,
+    map: HashMap<Path, NodeRef>,
 }
 
 impl SimpleExchange {
@@ -97,24 +107,18 @@ impl SimpleExchange {
 }
 
 impl Exchange for SimpleExchange {
-    fn create_node(&mut self, path: Path) {
-        let parent = self.get_node(path.parent());
-        self.insert_node(SimpleNode::new(path, parent))
+    fn insert_node(&mut self, node: NodeRef) {
+        let path = node.get_path().clone();
+        self.map.insert(path, node);
     }
 
-    fn insert_node(&mut self, node: SimpleNode) {
-        let path = node.path.clone();
-        let node = Rc::new(Cell::new(node));
-        self.map.insert(path, ThreadMode::Single(node));
-    }
-
-    fn get_node(&mut self, path: Path) -> Option<ThreadMode<SimpleNode>> {
+    fn get_node(&mut self, path: Path) -> Option<NodeRef> {
         if path == Path::root() {
-            Some(self.root.clone())
+            //Some(self.root.clone())
+            None
         } else {
             match self.map.get(&path) {
-                Some(&ThreadMode::Single(ref node)) => Some(ThreadMode::Single(node.clone())),
-                Some(&ThreadMode::Multi(ref node)) => Some(ThreadMode::Multi(node.clone())),
+                Some(&noderef) => Some(noderef.clone()),
                 None => None
             }
         }
